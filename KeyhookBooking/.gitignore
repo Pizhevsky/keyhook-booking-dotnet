@@ -1,0 +1,21 @@
+## .NET
+bin/
+obj/
+*.user
+*.suo
+.vs/
+*.db
+*.db-shm
+*.db-wal
+
+## Migrations (optional — remove if you want to commit them)
+# Migrations/
+
+## Rider / JetBrains
+.idea/
+
+## VS Code
+.vscode/
+
+## macOS
+.DS_Store

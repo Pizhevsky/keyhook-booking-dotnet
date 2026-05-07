@@ -1,0 +1,30 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.2.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeyhookBooking", "KeyhookBooking\KeyhookBooking.csproj", "{77251B2B-B7DF-B6D6-4C96-FCF43B27243E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeyhookBooking.Tests", "KeyhookBooking.Tests\KeyhookBooking.Tests.csproj", "{BC4160A3-0F38-79EA-3A80-EC9939177C79}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77251B2B-B7DF-B6D6-4C96-FCF43B27243E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77251B2B-B7DF-B6D6-4C96-FCF43B27243E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{77251B2B-B7DF-B6D6-4C96-FCF43B27243E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{77251B2B-B7DF-B6D6-4C96-FCF43B27243E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{BC4160A3-0F38-79EA-3A80-EC9939177C79}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BC4160A3-0F38-79EA-3A80-EC9939177C79}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BC4160A3-0F38-79EA-3A80-EC9939177C79}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BC4160A3-0F38-79EA-3A80-EC9939177C79}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {8DA52AC4-22EC-428B-859A-1D0FC7C9B50C}
+	EndGlobalSection
+EndGlobal
