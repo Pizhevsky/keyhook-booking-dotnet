@@ -19,6 +19,7 @@ public class Availability
     public string StartTime { get; set; } = string.Empty;
     public string EndTime { get; set; } = string.Empty;
     public string TimeZone { get; set; } = string.Empty;
+    public bool IsDeleted { get; set; }
     public User? Manager { get; set; }
     public ICollection<Booking> Bookings { get; set; } = new List<Booking>();
 }

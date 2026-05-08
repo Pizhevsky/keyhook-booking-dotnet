@@ -75,7 +75,7 @@ public class AvailabilityInvariantTests
     }
 
     [Fact]
-    public async Task SlotWithOnlyCancelledBookings_Delete_Succeeds()
+    public async Task SlotWithOnlyCancelledBookings_Delete_SoftDeletesAndPreservesBookingHistory()
     {
         using var db = CreateDb();
         db.Bookings.Add(new Booking
@@ -97,7 +97,18 @@ public class AvailabilityInvariantTests
         Assert.Equal(200, status);
         Assert.Null(error);
         Assert.Equal(10, dto!.Id);
-        Assert.Null(await db.Availabilities.FindAsync(10));
+
+        var deletedSlot = await db.Availabilities
+            .IgnoreQueryFilters()
+            .FirstOrDefaultAsync(a => a.Id == 10);
+        var visibleSlots = await service.GetAllAsync();
+        var preservedBooking = await db.Bookings.FindAsync(101);
+
+        Assert.NotNull(deletedSlot);
+        Assert.True(deletedSlot!.IsDeleted);
+        Assert.DoesNotContain(visibleSlots, a => a.Id == 10);
+        Assert.NotNull(preservedBooking);
+        Assert.Equal(10, preservedBooking!.SlotId);
     }
 
     [Fact]
@@ -174,8 +185,52 @@ public class AvailabilityInvariantTests
         Assert.Contains("own availability", error!, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public async Task SameLocalTimeDifferentTimezone_CreateAvailability_Succeeds()
+    {
+        using var db = CreateDb();
+        var service = CreateService(db);
+
+        var (dto, status, error) = await service.CreateAvailabilityAsync(
+            new CreateAvailabilityRequest(
+                ManagerId: 2,
+                SelectedDate: null,
+                DaysOfWeek: "2;5",
+                StartTime: "10:00",
+                EndTime: "11:00",
+                TimeZone: "America/New_York"
+            )
+        );
+
+        Assert.Equal(201, status);
+        Assert.Null(error);
+        Assert.NotNull(dto);
+    }
+
+    [Fact]
+    public async Task SameLocalTimeSameTimezone_CreateAvailability_Returns409()
+    {
+        using var db = CreateDb();
+        var service = CreateService(db);
+
+        var (_, status, error) = await service.CreateAvailabilityAsync(
+            new CreateAvailabilityRequest(
+                ManagerId: 2,
+                SelectedDate: null,
+                DaysOfWeek: "2;5",
+                StartTime: "10:00",
+                EndTime: "11:00",
+                TimeZone: "Pacific/Auckland"
+            )
+        );
+
+        Assert.Equal(409, status);
+        Assert.Contains("duplicate", error!, StringComparison.OrdinalIgnoreCase);
+    }
+
     [Theory]
     [InlineData("", "", "10:00", "11:00", "Pacific/Auckland", "At least one")]
+    [InlineData("20/10/2099", "2", "10:00", "11:00", "Pacific/Auckland", "Only one")]
     [InlineData("20/10/2099", "", "11:00", "10:00", "Pacific/Auckland", "later")]
     [InlineData("20/10/2099", "", "10:00", "11:00", "Not/ATimezone", "timezone")]
     [InlineData("20-10-2099", "", "10:00", "11:00", "Pacific/Auckland", "selectedDate")]
@@ -187,8 +242,7 @@ public class AvailabilityInvariantTests
         string end,
         string timezone,
         string expected
-    )
-    {
+    ){
         var error = AvailabilityService.ValidateAvailabilityInput(
             selectedDate,
             daysOfWeek,

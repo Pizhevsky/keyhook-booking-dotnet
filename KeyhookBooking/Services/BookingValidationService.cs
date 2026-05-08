@@ -35,7 +35,7 @@ public class BookingValidationService(AppDbContext db)
 
     private async Task<Availability?> FindSlotAsync(int slotId)
     {
-        return await db.Availabilities.FindAsync(slotId);
+        return await db.Availabilities.FirstOrDefaultAsync(a => a.Id == slotId && !a.IsDeleted);
     }
 
     private static string? ValidateBookingRequest(CreateBookingRequest req)

@@ -24,6 +24,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
         modelBuilder.Entity<Availability>(e =>
         {
             e.HasKey(a => a.Id);
+            e.HasQueryFilter(a => !a.IsDeleted);
             e.Property(a => a.SelectedDate).IsRequired();
             e.Property(a => a.DaysOfWeek).IsRequired();
             e.Property(a => a.StartTime).IsRequired();
@@ -32,7 +33,7 @@ public class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(op
             e.HasMany(a => a.Bookings)
                 .WithOne(b => b.Slot)
                 .HasForeignKey(b => b.SlotId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Booking>(e =>

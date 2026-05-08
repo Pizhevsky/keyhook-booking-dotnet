@@ -9,7 +9,9 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
 {
     public async Task<IReadOnlyList<AvailabilityDto>> GetAllAsync()
     {
-        var rows = await db.Availabilities.ToListAsync();
+        var rows = await db.Availabilities
+            .Where(a => !a.IsDeleted)
+            .ToListAsync();
 
         return rows.Select(ToDto).ToArray();
     }
@@ -39,11 +41,13 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
         var daysOfWeek = req.DaysOfWeek ?? string.Empty;
 
         var duplicate = await db.Availabilities.FirstOrDefaultAsync(a =>
+            !a.IsDeleted &&
             a.ManagerId == req.ManagerId &&
             a.SelectedDate == selectedDate &&
             a.DaysOfWeek == daysOfWeek &&
             a.StartTime == req.StartTime &&
-            a.EndTime == req.EndTime
+            a.EndTime == req.EndTime &&
+            a.TimeZone == req.TimeZone
         );
 
         if (duplicate is not null)
@@ -78,7 +82,7 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
         if (req.ManagerId is null || req.ManagerId <= 0)
             return (null, 400, "managerId required");
 
-        var slot = await db.Availabilities.FindAsync(slotId);
+        var slot = await db.Availabilities.FirstOrDefaultAsync(a => a.Id == slotId && !a.IsDeleted);
         if (slot is null)
             return (null, 404, "Slot not found");
 
@@ -117,12 +121,14 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
             return (null, 409, activeBookingError);
 
         var duplicate = await db.Availabilities.FirstOrDefaultAsync(a =>
+            !a.IsDeleted &&
             a.Id != slotId &&
             a.ManagerId == slot.ManagerId &&
             a.SelectedDate == nextSelectedDate &&
             a.DaysOfWeek == nextDaysOfWeek &&
             a.StartTime == nextStartTime &&
-            a.EndTime == nextEndTime
+            a.EndTime == nextEndTime &&
+            a.TimeZone == nextTimeZone
         );
         if (duplicate is not null)
             return (null, 409, "Duplicate slot");
@@ -149,7 +155,7 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
         if (requestError is not null)
             return (null, 400, requestError);
 
-        var slot = await db.Availabilities.FindAsync(slotId);
+        var slot = await db.Availabilities.FirstOrDefaultAsync(a => a.Id == slotId && !a.IsDeleted);
         if (slot is null)
             return (null, 404, "Slot not found");
 
@@ -161,10 +167,10 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
         if (activeBookingError is not null)
             return (null, 409, activeBookingError);
 
-        return await DeleteAvailabilityInTransactionAsync(slot);
+        return await SoftDeleteAvailabilityInTransactionAsync(slot);
     }
 
-    private async Task<(AvailabilityDto? availability, int status, string? error)> DeleteAvailabilityInTransactionAsync(
+    private async Task<(AvailabilityDto? availability, int status, string? error)> SoftDeleteAvailabilityInTransactionAsync(
         Availability slot
     ){
         var dto = ToDto(slot);
@@ -175,7 +181,7 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
             : null;
 
         try {
-            db.Availabilities.Remove(slot);
+            slot.IsDeleted = true;
             await db.SaveChangesAsync();
 
             if (tx is not null) 
@@ -250,6 +256,9 @@ public class AvailabilityService(AppDbContext db, IBroadcastService broadcast)
 
         if (!hasSelectedDate && !hasDaysOfWeek)
             return "At least one of daysOfWeek or selectedDate is required";
+
+        if (hasSelectedDate && hasDaysOfWeek)
+            return "Only one of daysOfWeek or selectedDate is allowed";
 
         if (hasSelectedDate && !BookingTimeService.IsValidDate(selectedDate))
             return "selectedDate must be in DD/MM/YYYY format";

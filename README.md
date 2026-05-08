@@ -12,6 +12,8 @@ The controller layer is kept thin. Controllers adapt HTTP requests into service 
 
 The database is not treated as a passive storage layer. The app performs validation before writing, but the filtered unique index also protects the most important invariant: only one active booking can exist for the same slot and date.
 
+Availability deletion is implemented as a soft delete so historical bookings remain linked to their original slot.
+
 Dates are kept in the frontend-compatible `DD/MM/YYYY` format at the API boundary. Internally, timezone-sensitive checks are handled with NodaTime.
 
 ## What this demonstrates
@@ -32,14 +34,14 @@ Both backends expose the same core REST contract and the same real-time message 
 
 The goal was not only to reproduce the existing API, but to apply .NET idioms properly and strengthen the backend rules around availability, timezone handling, ownership checks, cancellation, and conflict prevention.
 
-The latest Node.js backend already protects important invariants such as slot/date occurrence checks, soft cancellation, active-booking conflict checks, and delete protection for availability with active bookings. The .NET version keeps those behaviours and extends the protection to schedule-changing availability updates as well.
+The latest Node.js backend already protects important invariants such as slot/date occurrence checks, soft cancellation, active-booking conflict checks, and delete protection for availability with active bookings. The .NET version keeps those behaviours, extends the protection to schedule-changing availability updates, and soft-deletes availability so booking history is preserved.
 
 ## Tech stack
 
 | Layer | Technology |
 |---|---|
 | API | ASP.NET Core on .NET 10 |
-| Data access | Entity Framework Core with SQLite |
+| Data access | Entity Framework Core with SQLite migrations |
 | Real-time | SignalR |
 | Timezone | NodaTime (IANA tz database) |
 | Tests | xUnit + EF InMemory + Moq |
@@ -58,6 +60,7 @@ These are the rules the server enforces. The frontend performs convenience valid
 | 5 | Only one active booking per slot/date pair | App-level check + filtered unique DB index |
 | 6 | Tenants can only cancel their own bookings | `BookingService.CancelBookingAsync` |
 | 7 | Availability with active bookings cannot be edited or deleted | `AvailabilityService.AssertNoActiveBookingsAsync` |
+| 8 | Deleted availability is hidden instead of hard-deleted | `AvailabilityService.DeleteAvailabilityAsync` |
 
 ### On double-booking prevention
 
@@ -68,25 +71,30 @@ The index is filtered so cancelled bookings are excluded: a cancelled row does n
 ## Requirements
 
 - .NET 10 SDK
-- `dotnet-ef` tool: `dotnet tool install --global dotnet-ef`
 
 ## Getting started
 
 ```bash
 cd KeyhookBooking
 dotnet restore
-dotnet ef migrations add Init
-dotnet ef database update
 dotnet run
 ```
 
+The initial EF Core migration is committed. The API applies pending migrations on startup with `Database.MigrateAsync()`.
+
 The API listens on `http://localhost:4000` by default. Swagger is available in development at `http://localhost:4000/swagger`.
+
+`Properties/launchSettings.json` sets `ASPNETCORE_ENVIRONMENT=Development` for `dotnet run`. If your IDE or shell ignores launch profiles, start it explicitly:
+
+```bash
+ASPNETCORE_ENVIRONMENT=Development dotnet run
+```
 
 The `PORT` key in `appsettings.json` overrides the default port.
 
 ## Running tests
 
-Tests use EF Core's InMemory provider, so no local database or migration is needed:
+Most service tests use EF Core's InMemory provider, so no local database or migration is needed. A SQLite relational test covers the filtered unique booking index.
 
 ```bash
 cd KeyhookBooking.Tests
@@ -105,7 +113,7 @@ To run a specific test class:
 dotnet test --filter "ClassName=BookingInvariantTests"
 ```
 
-Most tests use EF Core's InMemory provider because they focus on business rules. The filtered unique index is a relational database guarantee, so a production-grade test suite would also include a SQLite or PostgreSQL integration test for concurrent booking attempts.
+The InMemory tests focus on business rules, while the SQLite test verifies the database-level uniqueness guarantee. A production-grade suite would also add a PostgreSQL/Testcontainers test and a true concurrent booking scenario.
 
 ## Real-time events (SignalR)
 
@@ -120,11 +128,13 @@ Connect to `/bookingHub`. All events arrive on the `"message"` channel with this
 | `USER_CREATED` | A new user is created |
 | `AVAILABILITY_CREATED` | A manager adds a slot |
 | `AVAILABILITY_UPDATED` | A slot's schedule changes |
-| `AVAILABILITY_DELETED` | A slot is removed |
+| `AVAILABILITY_DELETED` | A slot is soft-deleted and hidden from availability reads |
 | `BOOKING_CREATED` | A tenant books a slot |
 | `BOOKING_CANCELLED` | A booking is soft-cancelled |
 
 Bookings are never hard-deleted. Cancellation sets `status` to `cancelled_by_tenant` or `cancelled_by_manager` and records a `cancelledAt` timestamp. This preserves history and is what allows re-booking the same slot after a cancellation.
+
+Availability is also soft-deleted. Deleting a slot sets `IsDeleted = true`, hides it from `GET /api/availability`, and keeps related booking rows intact for history.
 
 ### Connecting from the React client
 
@@ -184,9 +194,9 @@ POST /api/availability
 }
 ```
 
-`daysOfWeek` uses ISO weekday numbers (1 = Monday, 7 = Sunday) separated by semicolons. Use `selectedDate` in `DD/MM/YYYY` format for a one-off slot instead. At least one of the two is required. `timeZone` must be a valid IANA identifier.
+`daysOfWeek` uses ISO weekday numbers (1 = Monday, 7 = Sunday) separated by semicolons. Use `selectedDate` in `DD/MM/YYYY` format for a one-off slot instead. Exactly one of `daysOfWeek` or `selectedDate` is required. `timeZone` must be a valid IANA identifier.
 
-Updates and deletes are rejected with 409 if the slot has any active bookings.
+Updates and deletes are rejected with 409 if the slot has any active bookings. Deleting a slot without active bookings soft-deletes it instead of removing the database row.
 
 ### Bookings
 
@@ -206,7 +216,8 @@ POST /api/bookings
 }
 ```
 
-`bookDate` must be in `DD/MM/YYYY` format and must fall on a day the slot occurs. Past slots are rejected using the slot's own timezone. `tenantTimeZone` is accepted for client compatibility but the slot timezone is used for the past-slot check.
+`bookDate` must be in `DD/MM/YYYY` format and must fall on a day the slot occurs. Past slots are rejected using the slot's own timezone.
+`tenantTimeZone` is kept in the request contract for compatibility with the existing React client. The server uses the slot's own timezone for past-slot validation because availability belongs to the manager's scheduled slot, not to the tenant's browser timezone.
 
 ## Project structure
 
@@ -227,6 +238,7 @@ KeyhookBooking/
 
 KeyhookBooking.Tests/
   BookingInvariantTests.cs      All booking rules including occurrence check
+  BookingRelationalInvariantTests.cs  SQLite filtered unique index behavior
   AvailabilityInvariantTests.cs  Edit/delete guards, ownership, validation
   TimezoneInvariantTests.cs      Past-slot rejection across multiple timezones
 ```
@@ -246,6 +258,6 @@ The database is seeded with four demo users and three availability slots on firs
 
 Authentication is simulated — user identity comes from request parameters rather than a session or token. This is intentional for the demo. Production would add JWT or cookie auth and derive user identity from the token rather than accepting it from the client.
 
-SQLite is used for local portability. PostgreSQL would be the production choice, and the filtered unique index syntax would change slightly (`WHERE "Status" = 'Active'` rather than `[Status] = 'Active'`).
+SQLite is used for local portability. For a production deployment, PostgreSQL would be a stronger choice for concurrency, operational tooling, and relational constraint support.
 
 CORS currently allows three hardcoded localhost origins. A production configuration would read allowed origins from environment variables.
