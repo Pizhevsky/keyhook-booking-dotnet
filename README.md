@@ -138,22 +138,7 @@ Availability is also soft-deleted. Deleting a slot sets `IsDeleted = true`, hide
 
 ### Connecting from the React client
 
-```ts
-import * as signalR from '@microsoft/signalr';
-
-const connection = new signalR.HubConnectionBuilder()
-  .withUrl('http://localhost:4000/bookingHub')
-  .withAutomaticReconnect()
-  .build();
-
-connection.on('message', (data) => {
-  // data.type, data.payload
-});
-
-await connection.start();
-```
-
-Set `SERVER_TYPE=.net` in the client `.env` to use SignalR instead of plain WebSocket.
+Set `SERVER_TYPE=dotnet` in the client `.env` to use SignalR instead of plain WebSocket.
 
 ## API reference
 
